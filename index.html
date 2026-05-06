@@ -17,6 +17,10 @@
     .view-section.active { display: block; animation: slideUp 0.3s ease-out; }
     @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.7); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    
+    /* Animasi putar untuk tombol refresh */
+    .spin-once { animation: spin 0.5s ease-in-out; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   </style>
 </head>
 <body class="min-h-screen">
@@ -36,11 +40,19 @@
           <p class="text-[10px] font-bold opacity-90 uppercase tracking-widest">GitHub Hosted System</p>
         </div>
       </div>
-      <button id="btnLogout" onclick="logout()" class="hidden bg-white/20 p-3 rounded-2xl backdrop-blur-md">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7" />
-        </svg>
-      </button>
+      <div class="flex gap-2">
+        <!-- Tombol Refresh Manual (Hanya muncul jika login sebagai member) -->
+        <button id="btnRefresh" onclick="manualRefresh()" class="hidden bg-white/20 p-3 rounded-2xl backdrop-blur-md active:scale-90 transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" id="refreshIcon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+        <button id="btnLogout" onclick="logout()" class="hidden bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7" />
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -117,7 +129,7 @@
                </button>
             </div>
           </div>
-          <p class="mt-6 text-[10px] text-gray-300 font-bold uppercase tracking-widest">Auto Sync Aktif</p>
+          <p class="mt-6 text-[10px] text-gray-300 font-bold uppercase tracking-widest">Tarik layar atau klik ikon refresh di atas</p>
       </div>
     </section>
   </main>
@@ -153,8 +165,9 @@
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxRJhJc6xwiZua6lMIE_AFsmycjVsdUC_d3g6xMr_5GMU753f5spMKrepEiUMQvPVKeQg/exec";
     
     let loggedInUserNoHp = null;
+    let userRole = null;
     let html5QrCode = null;
-    let autoRefreshTimer = null; // Timer untuk sinkronisasi otomatis
+    let autoRefreshTimer = null;
 
     async function callGAS(action, data = {}, showLoader = true) {
       if (showLoader) document.getElementById('loading').style.display = 'flex';
@@ -175,9 +188,12 @@
     function switchView(viewId) {
       document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
       document.getElementById(viewId).classList.add('active');
-      document.getElementById('btnLogout').classList.toggle('hidden', viewId === 'loginView' || viewId === 'registerView');
       
-      // Stop auto refresh jika bukan di halaman member
+      // Kontrol tampilan tombol Header
+      const isLogged = (viewId !== 'loginView' && viewId !== 'registerView');
+      document.getElementById('btnLogout').classList.toggle('hidden', !isLogged);
+      document.getElementById('btnRefresh').classList.toggle('hidden', viewId !== 'memberView');
+      
       if (viewId !== 'memberView') {
         clearInterval(autoRefreshTimer);
       }
@@ -190,6 +206,7 @@
       
       const res = await callGAS('loginUser', { hp, pin });
       if(res && res.success) {
+        userRole = res.role;
         if(res.role === 'admin') {
           switchView('adminView');
           refreshAdminData();
@@ -197,33 +214,42 @@
           loggedInUserNoHp = res.data.noHp.toString();
           switchView('memberView');
           renderDashboard(res.data);
-          startAutoRefresh(); // Mulai sinkronisasi otomatis
+          startAutoRefresh();
         }
       } else {
         alert(res ? res.message : "Gagal Login");
       }
     });
 
-    // FUNGSI SINKRONISASI OTOMATIS (Tanpa Reload)
+    // REFRESH MANUAL
+    async function manualRefresh() {
+      if (!loggedInUserNoHp) return;
+      
+      // Animasi putar ikon
+      const icon = document.getElementById('refreshIcon');
+      icon.classList.add('spin-once');
+      setTimeout(() => icon.classList.remove('spin-once'), 500);
+
+      const res = await callGAS('getMemberData', { noHp: loggedInUserNoHp }, true);
+      if (res) {
+        renderDashboard(res);
+      }
+    }
+
     function startAutoRefresh() {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-      
-      // Cek ke server setiap 5 detik
       autoRefreshTimer = setInterval(async () => {
         if (loggedInUserNoHp) {
-          // callGAS dengan parameter ketiga 'false' agar tidak muncul loading overlay yang mengganggu
           const res = await callGAS('getMemberData', { noHp: loggedInUserNoHp }, false);
           if (res) {
             renderDashboard(res);
           }
         }
-      }, 5000); 
+      }, 10000); // Interval auto-sync diperlama ke 10 detik untuk hemat data, manual lebih instan
     }
 
     function renderDashboard(data) {
       const currentTotal = document.getElementById('userTotal').innerText;
-      
-      // Hanya update jika ada perubahan data agar tidak berkedip
       if (currentTotal != data.total) {
         document.getElementById('userNama').innerText = data.nama;
         document.getElementById('userNoHp').innerText = data.noHp;
@@ -235,8 +261,6 @@
         document.getElementById('claimArea').classList.toggle('hidden', data.total < 10);
       }
     }
-
-    // --- SISANYA TETAP SAMA ---
 
     document.getElementById('regForm').addEventListener('submit', async function(e) {
       e.preventDefault();
