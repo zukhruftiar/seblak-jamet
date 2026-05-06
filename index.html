@@ -234,6 +234,11 @@
 
     async function addPoint(noHp) {
       await callGAS('addPurchase', { noHp });
+      // Jika yang discan adalah user yang sedang login, update dashboard-nya juga
+      if(noHp === loggedInUserNoHp) {
+        const updatedData = await callGAS('getMemberData', { noHp });
+        if(updatedData) renderDashboard(updatedData);
+      }
       refreshAdminData();
     }
 
@@ -280,6 +285,13 @@
           if(confirm(`Member ${member.nama} punya ${member.total} poin. Tukar hadiah?`)) {
             await callGAS('resetReward', { noHp });
             alert("Klaim Berhasil!");
+            
+            // UPDATE OTOMATIS: Ambil data terbaru dan render ulang dashboard
+            const updatedData = await callGAS('getMemberData', { noHp });
+            if(updatedData && noHp === loggedInUserNoHp) {
+              renderDashboard(updatedData);
+            }
+            
             refreshAdminData();
           }
         } else {
